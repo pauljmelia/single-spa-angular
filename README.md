@@ -1,6 +1,9 @@
 # single-spa-angular
 Helpers for building [single-spa](https://github.com/CanopyTax/single-spa) applications which use Angular.
 
+## Example
+See https://github.com/joeldenning/coexisting-angular-microfrontends.
+
 ## Angular CLI
 ### Installation
 If you're using the Angular CLI, use the Angular Schematic to quickly upgrade your application to single-spa.
@@ -70,16 +73,15 @@ npm install --save single-spa-angular
 
 Then create `main.single-spa.ts` with the following content:
 ```typescript
-import {platformBrowserDynamic} from '@angular/platform-browser-dynamic';
-import {ApplicationRef} from '@angular/core';
+import { platformBrowserDynamic } from '@angular/platform-browser-dynamic';
+import { ApplicationRef } from '@angular/core';
 import singleSpaAngular from 'single-spa-angular';
-import mainModule from './main-module.ts';
-import {Router} from '@angular/router';
+import { Router } from '@angular/router';
+import { AppModule } From './app/app.module';
 
 export default singleSpaAngular({
+  bootstrapFunction: () => platformBrowserDynamic().bootstrapModule(AppModule),
   domElementGetter,
-  mainModule,
-  angularPlatform: platformBrowserDynamic(),
   template: `<component-to-render />`,
   Router,
   ApplicationRef,
@@ -103,8 +105,7 @@ Options are passed to single-spa-angular via the `opts` parameter when calling `
 
 The following options are available:
 
-- `mainModule`: (required) An Angular module class. If you're using Typescript or ES6 decorators, this is a class with the @NgModule decorator on it.
-- `angularPlatform`: (required) The platform with which to bootstrap your module. The "Angular platform" refers to whether the code is running on the browser, mobile, server, etc. In the case of a single-spa application, you should use the `platformBrowserDynamic` platform.
+- `bootstrapFunction`: (required) A function that returns a promise that resolves with a resolved Angular module that is bootstrapped. Usually, your implementation will look like this: `bootstrapFunction: () => platformBrowserDynamic().bootstrapModule()`.
 - `template`: (required) An html string that will be put into the DOM Element returned by `domElementGetter`. This template can be anything, but it is recommended that you keeping it simple by making it only one Angular component. For example, `<my-component />` is recommended, but `<div><my-component /><span>Hello</span><another-component /></div>` is allowed. Note that `innerHTML` is used to put the template onto the DOM.
 - `Router`: (optional) The angular router class. This is required when you are using `@angular/router` and must be used in conjunction with the `ApplicationRef` option.
 - `ApplicationRef`: (optional) The angular application ref interface. This is required when you are using `@angular/router` and must be used in conjunction with the `Router` option.
@@ -155,7 +156,7 @@ Configuration options are provided to the `architect.build.options` section of y
 | ---- | ----------- | ------------- |
 | libraryName | (optional) Specify the name of the module | Angular CLI project name |
 | libraryTarget | (optional) The type of library to build [see available options](https://github.com/webpack/webpack/blob/master/declarations/WebpackOptions.d.ts#L1111) | "UMD" |
-| singleSpaWebpackConfigPath | (optional) Path to external webpack config to be merged with angular-cli output | undefined |
+| singleSpaWebpackConfigPath | (optional) Path to partial webpack config to be merged with angular's config. Example: `extra-webpack.config.js` | undefined |
 
 #### ng serve options
 Configuration options are provided to the `architect.serve.options` section of your angular.json. 
@@ -163,6 +164,7 @@ Configuration options are provided to the `architect.serve.options` section of y
 | Name | Description | Default Value |
 | ---- | ----------- | ------------- |
 | serveDirectory | (optional) A relative path to the directory where your index.html file is (single-spa root config) | `"../"`
+| singleSpaWebpackConfigPath | (optional) Path to partial webpack config to be merged with angular's config. Example: `extra-webpack.config.js` | undefined |
 
 #### Contributing
 For instructions on how to test this locally before creating a pull request, see the [Contributing guidelines](/CONTRIBUTING/md).
