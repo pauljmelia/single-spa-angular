@@ -46,7 +46,8 @@ export function createMainEntry(options: NgAddOptions) {
     const templateSource = apply(url('./_files/src'), [
       applyTemplates({
         prefix: project.workspace.prefix,
-        routing: options.routing
+        routing: options.routing,
+        usingBrowserAnimationsModule: options.usingBrowserAnimationsModule,
       }),
       move(path)
     ]);
@@ -70,7 +71,7 @@ export function updateConfiguration(options: NgAddOptions) {
     // Copy configuration from build architect
     clientProject.architect['single-spa'] = clientProject.architect.build;
     clientProject.architect['single-spa'].builder = 'single-spa-angular:build';
-    clientProject.architect['single-spa'].options.main = 'src/main.single-spa.ts';
+    clientProject.architect['single-spa'].options.main = `${project.workspace.sourceRoot}/main.single-spa.ts`;
 
     // Copy configuration from the serve architect
     clientProject.architect['single-spa-serve'] = clientProject.architect.serve;

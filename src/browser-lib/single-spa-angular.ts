@@ -6,7 +6,6 @@ const defaultOpts = {
   template: null,
   // optional opts
   Router: null,
-  ApplicationRef: null,
   domElementGetter: null, // only optional if you provide a domElementGetter as a custom prop
 };
 
@@ -26,10 +25,6 @@ export default function singleSpaAngular(userOpts) {
 
   if (typeof opts.template !== "string") {
     throw Error("single-spa-angular must be passed opts.template string");
-  }
-
-  if (opts.Router && !opts.ApplicationRef || opts.ApplicationRef && !opts.Router) {
-    throw Error("For @angular/router to work with single-spa, you must provide both the Router and ApplicationRef opts");
   }
 
   if (!opts.NgZone) {
@@ -55,26 +50,8 @@ function bootstrap(opts, props) {
     // and https://github.com/angular/angular/blob/a14dc2d7a4821a19f20a9547053a5734798f541e/packages/core/src/zone/ng_zone.ts#L257
     opts.NgZone.isInAngularZone = function() {
       // @ts-ignore
-      return window.Zone.current.get(opts.zoneIdentifier) === 'true';
+      return window.Zone.current.get(opts.zoneIdentifier) === true;
     }
-
-    opts.routingEventListener = function() {
-      /* When popstate and hashchange events occur, single-spa delays them in order to
-       * check which applications should be active and perform any necessary mounting/unmounting.
-       *
-       * ZoneJS freaks out about this because it hears about the events but it wasn't inside of a
-       * Zone.current.run() block (or similar). I tried out modifying single-spa to call the event listener
-       * inside of a Zone.run() block, but that didn't seem to help. I think if we could get that working
-       * that it would be the best solution.
-       *
-       * I also tried out trying to detect with single-spa:routing-event events are the ones that actually
-       * need to trigger an application tick, since not every one of them does. But I wasn't able to find a reliable
-       * way of detecting it. So I fell back to just always causing an application tick, even though that's probably
-       * not great for performance.
-       */
-      const applicationRef = opts.bootstrappedModule.injector.get(opts.ApplicationRef);
-      applicationRef.tick();
-    };
   });
 }
 
@@ -91,7 +68,7 @@ function mount(opts, props) {
       containerEl.innerHTML = opts.template;
     })
     .then(() => {
-      const bootstrapPromise = opts.bootstrapFunction()
+      const bootstrapPromise = opts.bootstrapFunction(props)
       if (!(bootstrapPromise instanceof Promise)) {
         throw Error(`single-spa-angular: the opts.bootstrapFunction must return a promise, but instead returned a '${typeof bootstrapPromise}' that is not a Promise`);
       }
@@ -103,9 +80,6 @@ function mount(opts, props) {
         module.injector.get(opts.NgZone)._inner._properties[opts.zoneIdentifier] = true;
         
         opts.bootstrappedModule = module;
-        if (opts.ApplicationRef) {
-          window.addEventListener("single-spa:routing-event", opts.routingEventListener);
-        }
         return module;
       });
     });
@@ -119,10 +93,35 @@ function unmount(opts, props) {
       const routerRef = opts.bootstrappedModule.injector.get(opts.Router);
       routerRef.dispose();
     }
-    if (opts.ApplicationRef) {
-      window.removeEventListener("single-spa:routing-event", opts.routingEventListener);
-    }
     opts.bootstrappedModule.destroy();
+    if (opts.AnimationEngine) {
+      /*
+      The BrowserAnimationsModule does not clean up after itself :'(. When you unmount/destroy the main module, the
+      BrowserAnimationsModule uses an AnimationRenderer thing to remove dom elements from the page. But the AnimationRenderer
+      defers the actual work to the TransitionAnimationEngine to do this, and the TransitionAnimationEngine doesn't actually
+      remove the dom node, but just calls "markElementAsRemoved()".
+
+      See https://github.com/angular/angular/blob/db62ccf9eb46ee89366ade586365ea027bb93eb1/packages/animations/browser/src/render/transition_animation_engine.ts#L717
+
+      What markAsRemovedDoes is put it into an array called "collectedLeaveElements", which is all the elements that should be removed
+      after the DOM has had a chance to do any animations.
+
+      See https://github.com/angular/angular/blob/master/packages/animations/browser/src/render/transition_animation_engine.ts#L525
+
+      The actual dom nodes aren't removed until the TransitionAnimationEngine "flushes".
+
+      See https://github.com/angular/angular/blob/db62ccf9eb46ee89366ade586365ea027bb93eb1/packages/animations/browser/src/render/transition_animation_engine.ts#L851
+
+      Unfortunately, though, that "flush" will never happen, since the entire module is being destroyed and there will be no more flushes.
+      So what we do in this code is force one more flush of the animations after the module is destroyed.
+
+      Ideally, we would do this by getting the TransitionAnimationEngine directly and flushing it. Unfortunately, though, it's private class
+      that cannot be imported and is not provided to the dependency injector. So, instead, we get its wrapper class, AnimationEngine, and then
+      access its private variable reference to the TransitionAnimationEngine so that we can call flush.
+      */
+      const animationEngine = opts.bootstrappedModule.injector.get(opts.AnimationEngine);
+      animationEngine._transitionEngine.flush();
+    }
     delete opts.bootstrappedModule;
   });
 }

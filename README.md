@@ -1,12 +1,18 @@
 # single-spa-angular
 Helpers for building [single-spa](https://github.com/CanopyTax/single-spa) applications which use Angular.
 
+[Join the #angular channel in single-spa's slack workspace](https://join.slack.com/t/single-spa/shared_invite/enQtMzIwMTcxNTU3ODQyLTM1Y2U1OWMzNTNjOWYyZDBlMDJhN2VkYzk3MDI2NzQ2Nzg0MzMzNjVhNWE2YjVhMTcxNjFkOWYzMjllMmUxMjk)
+
 ## Example
 See https://github.com/joeldenning/coexisting-angular-microfrontends.
 
 ## Angular CLI
 ### Installation
-If you're using the Angular CLI, use the Angular Schematic to quickly upgrade your application to single-spa.
+First, create an angular application. This requires installing [angular cli](https://cli.angular.io/).
+```sh
+ng new my-app --routing --defaults --prefix my-app
+cd my-app
+```
 
 In the root of your Angular CLI application run the following:
 ```sh
@@ -18,86 +24,69 @@ The schematic performs the following tasks:
 * Generate a `main.single-spa.ts` in your project's `/src`.
 * Add an npm script `npm run build:single-spa`.
 
-### Check if it works
+### Add a route
+If you're doing routing within your angular application, do the following:
 
-Now create a file **in the parent directory of your angular project** called `index.html` file in it. Your directory structure should look like this. Be sure to replace `nameOfAngularProject` with the actual name of your project.
-```
-index.html
-nameOfAngularProject/
---> dist/
-----> nameOfAngularProject/
-------> main.js
---> package.json
---> angular.json
---> src/
-```
+1. Add `{ provide: APP_BASE_HREF, useValue: '/' }` to `app-routing.module.ts`. See https://angular.io/api/common/APP_BASE_HREF for more details.
+2. Create an empty route component, that will handle all routes that are not handled by this single-spa application. `ng g component EmptyRoute`
+3. Add `{ path: '**', component: EmptyRouteComponent }` to your `app-routing.module.ts` routes. See https://angular.io/guide/router#configuration for more details.
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>Angular test</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <base href="/" />
-</head>
-<body>
-  <script src="https://unpkg.com/zone.js"></script>
-  <script src="https://unpkg.com/single-spa/lib/umd/single-spa.min.js"></script>
-  <script src="/nameOfAngularProject/dist/nameOfAngularProject/main.js"></script>
-  <script>
-    singleSpa.registerApplication('nameOfAngularProject', window.nameOfAngularProject.default, location => true);
-    singleSpa.start();
-  </script>
-</body>
-</html>
-```
+### Configuring multiple apps
+When you have multiple apps running side by side, you'll need to make sure that their
+[component selectors](https://angular.io/api/core/Directive#selector) are unique. When creating a new
+project, you can have angular-cli do this for you by passing in the `--prefix` option:
 
-Finally, run the following command from inside of the application directory:
 ```sh
-ng serve --open
+ng new --prefix app2
 ```
 
-Congrats! Now you've got your angular-cli application running as a single-spa application. Now you can add more Angular, React, or Vue applications to your
-root config's html file so that you have multiple microfrontends coexisting within a single page.
+If you did not use the `--prefix` option, you should set the prefix manually:
+
+1. For an application called app2, add `"prefix": "app2"` to `projects.app2` inside of the angular.json.
+2. Go to `app.component.ts`. Modify `selector` to be `app2-root`.
+3. Go to `main.single-spa.ts`. Modify `template` to be `<app2-root>`.
+
+### Check if it works
+Run the following:
+
+```sh
+ng serve --port 4200 --publicHost http://localhost:4200 --disable-host-check
+```
+
+This **will not** open up an html file, since single-spa applications all share one html file. Instead, go to
+http://single-spa-playground.org and follow the instructions there to verify everything is working and for instructions on creating the shared html file.
 
 ### Building
 You can run `ng build --prod`, which will create a `dist` directory with your compiled code.
 
 ## Manual Install
-In root of the application run:
+If you are not using Angular CLI, do the following:
 ```bash
 npm install --save single-spa-angular
 ```
 
 Then create `main.single-spa.ts` with the following content:
-```typescript
+```js
 import { platformBrowserDynamic } from '@angular/platform-browser-dynamic';
-import { ApplicationRef } from '@angular/core';
+import { NgZone } from '@angular/core';
 import singleSpaAngular from 'single-spa-angular';
 import { Router } from '@angular/router';
 import { AppModule } From './app/app.module';
 
-export default singleSpaAngular({
-  bootstrapFunction: () => platformBrowserDynamic().bootstrapModule(AppModule),
-  domElementGetter,
+const lifecycles = singleSpaAngular({
+  bootstrapFunction: (customProps) => platformBrowserDynamic().bootstrapModule(AppModule),
   template: `<component-to-render />`,
   Router,
-  ApplicationRef,
+  NgZone,
 })
 
-function domElementGetter() {
-  let containerEl = document.getElementById('my-app');
-  if (!containerEl) {
-    containerEl = document.createElement('div');
-    containerEl.id = 'my-app';
-    document.body.appendChild(containerEl);
-  }
-
-  return containerEl;
-}
+export const bootstrap = lifecycles.bootstrap;
+export const mount = lifecycles.mount;
+export const unmount = lifecycles.unmount;
 ```
+
+## Custom Props
+[Custom props](https://single-spa.js.org/docs/building-applications.html#custom-props) are a way of passing auth or other data to your single-spa applications. The custom props are available inside of the bootstrapFunction explained below.
 
 ## single-spa-angular options
 
@@ -105,10 +94,13 @@ Options are passed to single-spa-angular via the `opts` parameter when calling `
 
 The following options are available:
 
-- `bootstrapFunction`: (required) A function that returns a promise that resolves with a resolved Angular module that is bootstrapped. Usually, your implementation will look like this: `bootstrapFunction: () => platformBrowserDynamic().bootstrapModule()`.
-- `template`: (required) An html string that will be put into the DOM Element returned by `domElementGetter`. This template can be anything, but it is recommended that you keeping it simple by making it only one Angular component. For example, `<my-component />` is recommended, but `<div><my-component /><span>Hello</span><another-component /></div>` is allowed. Note that `innerHTML` is used to put the template onto the DOM.
-- `Router`: (optional) The angular router class. This is required when you are using `@angular/router` and must be used in conjunction with the `ApplicationRef` option.
-- `ApplicationRef`: (optional) The angular application ref interface. This is required when you are using `@angular/router` and must be used in conjunction with the `Router` option.
+- `bootstrapFunction`: (required) A function that is given custom props as an argument and returns a promise that resolves with a resolved Angular module that is bootstrapped. Usually, your implementation will look like this: `bootstrapFunction: (customProps) => platformBrowserDynamic().bootstrapModule()`.
+  See [custom props documentation](https://single-spa.js.org/docs/building-applications.html#custom-props) for more info on the argument passed to the function.
+- `template`: (required) An html string that will be put into the DOM Element returned by `domElementGetter`. This template can be anything, but it is recommended that you keeping it simple by making it only one Angular component. For example, `<my-component />` is recommended, but `<div><my-component /><span>Hello</span><another-component /></div>` is allowed. Note that `innerHTML` is used to put the template onto the DOM. Also note that when using multiple angular applications simultaneously, you will want to make sure that the component selectors provided are unique to avoid collisions.
+- `Router`: (optional) The angular router class. This is required when you are using `@angular/router`.
+- `AnimationModule`: (optional) The animation module class. This is required when you are using BrowserAnimationsModule.
+  Example way to import this: `import { eAnimationEngine as AnimationModule } from '@angular/animations/browser';`.
+  See [Issue 48](https://github.com/CanopyTax/single-spa-angular/issues/48) for more details.
 - `domElementGetter`: (optional) A function that takes in no arguments and returns a DOMElement. This dom element is where the Angular application will be bootstrapped, mounted, and unmounted.
     Note that this opt can only be omitted when domElementGetter is passed in as a [custom prop](https://github.com/CanopyTax/single-spa/blob/master/docs/applications.md#custom-props). So you must either
     do `singleSpaReact({..., domElementGetter: function() {return ...}})` or do `singleSpa.registerApplication(name, app, activityFn, {domElementGetter: function() {...}})`
@@ -116,6 +108,7 @@ The following options are available:
 ## Other notes
 - If you have multiple angular child applications, make sure that `reflect-metadata` is only imported once in the root application and is not imported again in the child applications. Otherwise, you might see an `No NgModule metadata found` error. See [issue thread](https://github.com/CanopyTax/single-spa-angular/issues/2#issuecomment-347864894) for more details.
 - Note that you should only have one version of ZoneJS, even if you have multiple versions of Angular.
+- Make sure that the root component selectors for each of your angular applications are unique so that angular can differentiate them. The default selector for an angular cli application is `app-root`. You will need to update these selectors to be unique in your child application's `app.component.ts`, as well as in the singleSpaAngular template option found in `main.single-spa.ts`. To catch other references (such as in test files) try a project wide find and replace for `app-root`.  
 
 ## Angular Builder
 To aid in building your applications a builder is available to generate a module for single-spa to consume.
@@ -143,7 +136,6 @@ Example Configuration:
       "serve": {
         "builder": "single-spa-angular:dev-server",
         "options": {
-          "serveDirectory": "../"
         }
       }
   }
@@ -163,7 +155,6 @@ Configuration options are provided to the `architect.serve.options` section of y
 
 | Name | Description | Default Value |
 | ---- | ----------- | ------------- |
-| serveDirectory | (optional) A relative path to the directory where your index.html file is (single-spa root config) | `"../"`
 | singleSpaWebpackConfigPath | (optional) Path to partial webpack config to be merged with angular's config. Example: `extra-webpack.config.js` | undefined |
 
 #### Contributing
